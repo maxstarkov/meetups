@@ -17,7 +17,7 @@ function source_config_file {
 }
 
 LOGS_DIR="$PWD/dev/logs"
-mkdir -p $LOGS_DIR
+mkdir -p "$LOGS_DIR"
 
 function get_log_file {
     TIMESTAMP=$(date +%Y%m%d-%H%M%S)

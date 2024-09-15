@@ -3,14 +3,14 @@
     "tasks": [
         {
             "label": "Setup",
-            "type": "process",
+            "type": "shell",
             "command": "${workspaceFolder}/dev/setup.sh",
             "detail": "Setup environment for development, run ./configure script",
             "problemMatcher": []
         },
         {
             "label": "Build",
-            "type": "process",
+            "type": "shell",
             "command": "${workspaceFolder}/dev/build.sh",
             "args": [
                 "-j",
@@ -26,7 +26,7 @@
         {
             "label": "Run DB",
             "detail": "Run and init DB",
-            "type": "process",
+            "type": "shell",
             "command": "${workspaceFolder}/dev/run.sh",
             "args": [
                 "--init-db",
@@ -37,7 +37,7 @@
         {
             "label": "Run psql",
             "detail": "Run psql",
-            "type": "process",
+            "type": "shell",
             "command": "${workspaceFolder}/dev/run.sh",
             "args": [
                 "--init-db",
@@ -50,7 +50,7 @@
         {
             "label": "Stop DB",
             "detail": "Stop running DB",
-            "type": "process",
+            "type": "shell",
             "command": "${workspaceFolder}/dev/run.sh",
             "args": [
                 "--stop-db"
@@ -80,7 +80,7 @@
         {
             "label": "Test regress",
             "detail": "Run regression tests (make check)",
-            "type": "process",
+            "type": "shell",
             "command": "${workspaceFolder}/dev/test.sh",
             "args": [
                 "--regress"
@@ -94,7 +94,7 @@
         {
             "label": "Test full",
             "detail": "Run all tests: regress, tap, isolation etc... (make check-world)",
-            "type": "process",
+            "type": "shell",
             "command": "${workspaceFolder}/dev/test.sh",
             "args": [
                 "--full"
@@ -119,13 +119,6 @@
             "args": [
                 "--full"
             ],
-            "problemMatcher": []
-        },
-        {
-            "label": "Get backend pid",
-            "type": "shell",
-            "hide": true,
-            "command": "${workspaceFolder}/get_current_backend_pid.sh",
             "problemMatcher": []
         }
     ],

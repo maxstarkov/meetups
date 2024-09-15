@@ -37,16 +37,16 @@ while [[ "$1" ]]; do
     shift
 done
 
-source "$(dirname ${BASH_SOURCE[0]:-$0})/utils.sh"
+source "$(dirname "${BASH_SOURCE[0]:-$0}")/utils.sh"
 
 if [[ "$BUILD" ]]; then
     {
         make clean
-    } 2>&1 | tee -a $(get_log_file "clean")
+    } 2>&1 | tee -a "$(get_log_file "clean")"
 fi
 
 if [[ "$FULL" ]]; then
     {
         make distclean
-    } 2>&1 | tee -a $(get_log_file "clean")
+    } 2>&1 | tee -a "$(get_log_file "clean")"
 fi

@@ -34,7 +34,7 @@ while [ "$1" ]; do
 done
 
 set -e
-cd "$(dirname ${BASH_SOURCE[0]:-$0})/.."
+cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.."
 
 CFLAGS="-O0 -g $CFLAGS"
 CPPFLAGS="-O0 -g $CPPFLAGS"
@@ -69,5 +69,5 @@ EOF
     cat <<EOF >"$PSQLRC_FILE"
 select pg_backend_pid();
 EOF
-} 2>&1 | tee -a $(get_log_file "setup")
+} 2>&1 | tee -a "$(get_log_file "setup")"
 

@@ -65,16 +65,16 @@ sudo yum install gcc gdb bison flex make readline-devel perl-CPAN
 # Переходим в директорию с исходным кодом
 cd postgresql
 
-# Запускаем сборку (параллельно 8 воркеров, можно убрать)
+# Запускаем сборку (параллельно 8 воркеров, можно указать свое количество)
 ./dev/build.sh -j 8
 
 # Настраиваем схему БД
 ./dev/run.sh --init-db --run-db --psql --script=../schema_constrexcl.sql --stop-db
 
-# Запускаем VS Code и открываем необходимые вкладки (если есть)
+# Запускаем VS Code (если есть) и открываем с открытыми необходимыми вкладками
 code . --goto src/backend/optimizer/util/constrexcl.c  \
-        --goto src/backend/optimizer/util/clauses.c    \
-        --goto src/backend/optimizer/plan/planmain.c
+       --goto src/backend/optimizer/util/clauses.c     \
+       --goto src/backend/optimizer/plan/planmain.c
 ```
 
 После этого можно запускать PSQL и выполнять скрипты из `queries_constrexcl.sql`.

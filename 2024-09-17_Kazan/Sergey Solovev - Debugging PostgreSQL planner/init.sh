@@ -103,7 +103,9 @@ fi
 
 
 # Setup VS Code
+HAS_VSCODE=""
 if code --version >/dev/null 2>&1; then
+    HAS_VSCODE="1"
     echo "VS Code detected"
     echo "Copying VS Code configuration files into $SRC_DIR/dev"
     cp -r .vscode $SRC_DIR/
@@ -119,3 +121,12 @@ echo ""
 echo "Development scripts located under '$SRC_DIR/dev' folder"
 echo "For more info run each of them with '-h' or '--help' flags"
 echo "Example: ./dev/build.sh --help"
+
+if [ "$HAS_VSCODE" ]; then
+    echo ""
+    echo "You can open VS Code using this command:"
+    echo "code . --goto src/backend/optimizer/util/constrexcl.c  \\"
+    echo "   --goto src/backend/optimizer/util/clauses.c    \\"
+    echo "   --goto src/backend/optimizer/plan/planmain.c"
+    echo ""
+fi

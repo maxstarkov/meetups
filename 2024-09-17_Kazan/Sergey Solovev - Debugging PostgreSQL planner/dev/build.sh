@@ -40,7 +40,7 @@ while [ "$1" ]; do
     shift
 done
 
-source "$(dirname ${BASH_SOURCE[0]:-$0})/utils.sh"
+source "$(dirname "${BASH_SOURCE[0]:-$0}")/utils.sh"
 source_config_file
 
 if [[ -n "$THREADS" ]]; then
@@ -52,4 +52,4 @@ fi
     make install
     source "$CONFIG_FILE"
     make install-world-bin
-} 2>&1 | tee -a $(get_log_file "build")
+} 2>&1 | tee -a "$(get_log_file "build")"

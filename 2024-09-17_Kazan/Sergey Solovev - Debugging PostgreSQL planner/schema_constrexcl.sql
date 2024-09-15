@@ -2,12 +2,12 @@ CREATE TABLE tbl1(
     id BIGINT GENERATED ALWAYS AS IDENTITY,
     value INTEGER
 );
-INSERT INTO tbl1(value) SELECT (random() * 1000)::INTEGER FROM generate_series(1, 1000);
-
 CREATE TABLE tbl2(
     id BIGINT GENERATED ALWAYS AS IDENTITY,
     value INTEGER
 );
+
+INSERT INTO tbl1(value) SELECT (random() * 1000)::INTEGER FROM generate_series(1, 1000);
 INSERT INTO tbl1(value) SELECT (random() * 1000)::INTEGER FROM generate_series(1, 1000);
 
 ANALYZE tbl1;

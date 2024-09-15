@@ -51,7 +51,7 @@ while [ "$1" ]; do
     shift
 done
 
-source "$(dirname ${BASH_SOURCE[0]:-$0})/utils.sh"
+source "$(dirname "${BASH_SOURCE[0]:-$0}")/utils.sh"
 source_config_file
 
 if [ "$THREADS" ]; then
@@ -61,11 +61,11 @@ fi
 if [ "$REGRESS" ]; then
     {
         make check $THREADS
-    } 2>&1 | tee -a $(get_log_file "test")
+    } 2>&1 | tee -a "$(get_log_file "test")"
 fi
 
 if [ "$FULL" ]; then
     {
         make check-world $THREADS    
-    } 2>&1 | tee -a $(get_log_file "test")
+    } 2>&1 | tee -a "$(get_log_file "test")"
 fi
