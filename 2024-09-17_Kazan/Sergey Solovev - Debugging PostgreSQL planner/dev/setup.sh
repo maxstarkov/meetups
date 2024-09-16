@@ -34,7 +34,7 @@ while [ "$1" ]; do
 done
 
 set -e
-cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.."
+source "$(dirname "${BASH_SOURCE[0]:-$0}")/utils.sh"
 
 CFLAGS="-O0 -g $CFLAGS"
 CPPFLAGS="-O0 -g $CPPFLAGS"

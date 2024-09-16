@@ -68,7 +68,7 @@ fi
 if [ "$RUN_DB" ]; then
     # Not 0 exit code can mean DB already running - do not exit script with error
     {
-        pg_ctl start -o '-k ""' -l ./dev/postgresql.log || true
+        pg_ctl start -o '-k ""' -l "$(get_log_file "postgresql")" || true
     }  2>&1 | tee -a "$(get_log_file "pg_ctl")"
 fi
 

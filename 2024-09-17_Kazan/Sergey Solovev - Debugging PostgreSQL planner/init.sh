@@ -51,17 +51,17 @@ TAR_URI="https://ftp.postgresql.org/pub/source/v16.4/postgresql-16.4.tar.gz"
 
 # Download sources
 
-if [ -f $TAR_FILENAME ] && ! tar tf $TAR_FILENAME >/dev/null 2>&1; then
-    rm $TAR_FILENAME
+if [ -f "$TAR_FILENAME" ] && ! tar tf '$TAR_FILENAME' >/dev/null 2>&1; then
+    rm "$TAR_FILENAME"
 fi
 
 
-if [ ! -f $TAR_FILENAME ]; then
+if [ ! -f "$TAR_FILENAME" ]; then
     echo "Downloading tar file with sources"
     if wget --version >/dev/null 2>&1; then
-        wget -O $TAR_FILENAME -q $TAR_URI
+        wget -O "$TAR_FILENAME" -q "$TAR_URI"
     elif curl --verison >/dev/null 2>&1; then
-        curl -q --output $TAR_FILENAME $TAR_URI
+        curl -q --output "$TAR_FILENAME" "$TAR_URI"
     else
         echo "Curl or wget not detected"
         echo "Please install curl or wget and try again"
@@ -71,15 +71,15 @@ if [ ! -f $TAR_FILENAME ]; then
     fi
 fi
 
-rm -rf $SRC_DIR $UNPACKED_FILENAME
+rm -rf "$SRC_DIR" "$UNPACKED_FILENAME"
 
 echo "Unpacking source files"
-tar xvf $TAR_FILENAME
-mv $UNPACKED_FILENAME $SRC_DIR
+tar xvf "$TAR_FILENAME"
+mv "$UNPACKED_FILENAME" "$SRC_DIR"
 
 # Setup dev scripts
 echo "Copying development scripts into $SRC_DIR/dev"
-cp -r dev $SRC_DIR
+cp -r dev "$SRC_DIR"
 
 # Applying patches
 echo "Copying setup files for practice"
@@ -93,7 +93,7 @@ cp setup/constrexcl.h postgresql/src/include/optimizer/constrexcl.h
 if [ ! -f "$SRC_DIR/config.status" ]; then
     echo "Running setup script"
     (
-        cd $SRC_DIR
+        cd "$SRC_DIR"
         ./dev/setup.sh --configure-args="--without-icu --without-zstd --without-zlib --disable-tap-tests"
     )
 else
@@ -108,7 +108,7 @@ if code --version >/dev/null 2>&1; then
     HAS_VSCODE="1"
     echo "VS Code detected"
     echo "Copying VS Code configuration files into $SRC_DIR/dev"
-    cp -r .vscode $SRC_DIR/
+    cp -r .vscode "$SRC_DIR"
     echo "Installing extension 'C/C++'"
     code --install-extension ms-vscode.cpptools 2>/dev/null || true
     echo "Installing extension 'PostgreSQL Hacker Helper'"
@@ -125,8 +125,8 @@ echo "Example: ./dev/build.sh --help"
 if [ "$HAS_VSCODE" ]; then
     echo ""
     echo "You can open VS Code using this command:"
-    echo "code . --goto src/backend/optimizer/util/constrexcl.c  \\"
-    echo "   --goto src/backend/optimizer/util/clauses.c    \\"
-    echo "   --goto src/backend/optimizer/plan/planmain.c"
+    echo "code postgresql --goto postgresql/src/backend/optimizer/util/constrexcl.c  \\"
+    echo "                --goto postgresql/src/backend/optimizer/util/clauses.c     \\"
+    echo "                --goto postgresql/src/backend/optimizer/plan/planmain.c"
     echo ""
 fi
