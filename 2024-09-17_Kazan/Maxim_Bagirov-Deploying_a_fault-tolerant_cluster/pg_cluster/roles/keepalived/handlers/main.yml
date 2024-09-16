@@ -1,0 +1,9 @@
+---
+
+- name: Restart keepalived-tantor service
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+    name: keepalived-tantor
+    enabled: true
+    state: restarted
+  listen: "restart keepalived"

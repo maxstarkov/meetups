@@ -1,0 +1,45 @@
+version: '3.8'
+
+services:
+  node1:
+    image: mbagirov/ubuntu_systemd_container:1.0.0
+    container_name: node1
+    hostname: node1.local
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      macvlan_net:
+        ipv4_address: 10.10.44.101
+
+  node2:
+    image: mbagirov/ubuntu_systemd_container:1.0.0
+    container_name: node2
+    hostname: node2.local
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      macvlan_net:
+        ipv4_address: 10.10.44.102
+
+  node3:
+    image: mbagirov/ubuntu_systemd_container:1.0.0
+    container_name: node3
+    hostname: node3.local
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    networks:
+      macvlan_net:
+        ipv4_address: 10.10.44.103
+
+networks:
+  macvlan_net:
+    driver: macvlan
+    driver_opts:
+      parent: enp0s8  # Укажите физический интерфейс вашей системы, подключенный к сети
+    ipam:
+      config:
+        - subnet: 10.10.44.0/24  # Подсеть, к которой будут подключены контейнеры
+          gateway: 10.10.44.10    # Шлюз для контейнеров

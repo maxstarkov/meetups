@@ -1,0 +1,51 @@
+---
+
+- name: Install prerequisite packages
+  ansible.builtin.package:
+    name:
+      - openssl
+      - gnupg
+      - gpg
+      - locales
+      - libpq-dev
+    state: present
+    update_cache: true
+
+- name: Configure nexus repository key
+  when: add_nexus_repo == 'true'
+  ansible.builtin.apt_key:
+    url: "{{ nexus_key_url }}"
+    state: present
+
+- name: Ensure the locale exists
+  community.general.locale_gen:
+    name: "{{ item }}"
+    state: present
+  with_items:
+    - ru_RU.UTF-8
+    - en_US.UTF-8
+
+- name: Block for Astra
+  when: (ansible_os_family in ("Astra Linux", "Astra Linux (Orel)")) and (add_nexus_repo == 'true')
+  block:
+    - name: Configure nexus repository (Astra Smolenks)
+      ansible.builtin.apt_repository:
+        repo: "{{ nexus_apt_astra }}"
+
+
+- name: Block for Ubuntu
+  when: (ansible_distribution == "Ubuntu") and (add_nexus_repo == 'true')
+  block:
+    - name: Configure nexus repository (Ubuntu 22.04)
+      ansible.builtin.apt_repository:
+        repo: "{{ nexus_apt_ubuntu_22_04 }}"
+        state: present
+        filename: tantorlabs
+      when: (ansible_distribution_version == "22.04")
+
+    - name: Configure nexus repository (Ubuntu 20.04)
+      ansible.builtin.apt_repository:
+        repo: "{{ nexus_apt_ubuntu_20_04 }}"
+        state: present
+        filename: tantorlabs
+      when: (ansible_distribution_version == "20.04")

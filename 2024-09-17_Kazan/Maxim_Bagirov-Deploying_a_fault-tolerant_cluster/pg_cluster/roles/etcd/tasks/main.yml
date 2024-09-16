@@ -1,0 +1,170 @@
+---
+- name: Collect facts for etcd
+  ansible.builtin.set_fact:
+    cacheable: true
+    etcd_listen_public: >-
+        {{ "0.0.0.0" if etcd_iface_public == "all" else
+          (ansible_default_ipv4.address if etcd_iface_public == "default"
+            else hostvars[inventory_hostname]["ansible_" ~ etcd_iface_public]["ipv4"]["address"]) }}
+
+    etcd_listen_cluster: >-
+        {{ "0.0.0.0" if etcd_iface_cluster == "all" else
+          (ansible_default_ipv4.address if etcd_iface_cluster == "default"
+           else hostvars[inventory_hostname]["ansible_" ~ etcd_iface_cluster]["ipv4"]["address"]) }}
+
+    etcd_address_public: >-
+        {{ ansible_hostname if not etcd_use_ips | bool else
+          (ansible_default_ipv4.address if etcd_iface_public is in [ "all", "default" ]
+           else hostvars[inventory_hostname]["ansible_" ~ etcd_iface_public]["ipv4"]["address"]) }}
+
+    etcd_address_cluster: >-
+        {{ ansible_hostname if not etcd_use_ips | bool else
+          (ansible_default_ipv4.address if etcd_iface_cluster is in [ "all", "default" ]
+           else hostvars[inventory_hostname]["ansible_" ~ etcd_iface_cluster]["ipv4"]["address"]) }}
+
+- name: Install etcd-tantor-all (RHEL-like systems)
+  when: ansible_os_family in ["RED", "Centos", "Rocky", "RedHat"]
+  ansible.builtin.yum:
+    name: >-
+      {{
+        'etcd-tantor-all-' + etcd_package_version
+        if etcd_package_version | length > 0
+        else
+        'etcd-tantor-all'
+      }}
+    state: present
+    allow_downgrade: true
+
+- name: Install etcd-tantor-all (Debian-like systems)
+  when: ansible_os_family in ["Astra Linux", "Debian"]
+  ansible.builtin.apt:
+    name: >-
+      {{
+        'etcd-tantor-all=' + etcd_package_version
+        if etcd_package_version | length > 0
+        else
+        'etcd-tantor-all'
+      }}
+    state: present
+    allow_downgrade: true
+
+- name: Create dirs
+  become: true
+  become_user: root
+  ansible.builtin.file:
+    state: directory
+    path: '{{ item }}'
+    owner: '{{ etcd_user }}'
+    group: '{{ etcd_group }}'
+    mode: "0755"
+  with_items:
+    - '{{ etcd_cluster_pki_dir }}'
+
+- name: Add tasks for secure ETCD connection
+  ansible.builtin.include_tasks: pki.yml
+  when: etcd_secure | bool
+
+- name: Run etcdctl member list to check etcd cluster health
+  ansible.builtin.command: >
+    /opt/tantor/usr/bin/etcdctl
+    --endpoints=https://{{ ansible_default_ipv4.address }}:2379
+    {% if etcd_secure | default(true) %}
+    --cacert=/opt/tantor/var/lib/etcd/pg-cluster.pki/ca.pem
+    --cert=/opt/tantor/var/lib/etcd/pg-cluster.pki/{{ inventory_hostname }}.pem
+    --key=/opt/tantor/var/lib/etcd/pg-cluster.pki/{{ inventory_hostname }}-key.pem
+    {% endif %}
+    member list
+  register: etcdctl_output
+  failed_when: false
+  changed_when: false
+
+- name: Set etcd cluster healthy to false if etcdctl command failed
+  ansible.builtin.set_fact:
+    etcd_cluster_healthy: false
+  when: etcdctl_output.rc != 0
+
+- name: Parse etcdctl output for etcd members
+  ansible.builtin.set_fact:
+    etcd_members: "{{ etcdctl_output.stdout_lines }}"
+  when: etcdctl_output.rc == 0
+
+- name: Verify if at least one etcd node is in 'started' state
+  ansible.builtin.set_fact:
+    etcd_cluster_healthy: >-
+      {{
+        etcd_members
+        | select('search', 'started')
+        | list
+        | length > 0
+      }}
+  when:
+    - etcdctl_output.rc == 0
+    - etcd_members | length > 0
+
+- name: Collect etcd_cluster_healthy from all nodes
+  ansible.builtin.set_fact:
+    etcd_health_status: "{{ hostvars | dict2items | selectattr('value.etcd_cluster_healthy', 'equalto', true) | list | length > 0 }}"
+  run_once: true
+
+# - name: Collect facts
+#   ansible.builtin.gather_facts:
+
+# - name: Collect etcd cluster health facts
+#   set_fact:
+#     etcd_healthy_nodes: >-
+#       {{
+#         groups['inv_etcd']
+#         | selectattr('hostvars[item].etcd_cluster_healthy', 'equalto', true)
+#         | list
+#       }}
+#     etcd_unhealthy_nodes: >-
+#       {{
+#         groups['inv_etcd']
+#         | selectattr('hostvars[item].etcd_cluster_healthy', 'equalto', false)
+#         | list
+#       }}
+#   vars:
+#     item: "{{ inventory_hostname }}"
+#   run_once: true
+
+
+# - name: Add unhealthy node to etcd cluster from a healthy node
+#   command: >
+#     /opt/tantor/usr/bin/etcdctl
+#     --endpoints=https://{{ etcd_healthy_nodes[0] }}:2379
+#     --cacert=/opt/tantor/etc/patroni/ca.pem
+#     --cert=/opt/tantor/var/lib/etcd/pg-cluster.pki/{{ etcd_healthy_nodes[0] }}.pem
+#     --key=/opt/tantor/var/lib/etcd/pg-cluster.pki/{{ etcd_healthy_nodes[0] }}-key.pem
+#     member add {{ item }} --peer-urls=https://{{ hostvars[item].ansible_default_ipv4.address }}:2380
+#   with_items: "{{ etcd_unhealthy_nodes }}"
+#   when:
+#     - etcd_unhealthy_nodes | length > 0
+#     - etcd_healthy_nodes | length > 0
+#   delegate_to: "{{ etcd_healthy_nodes[0] }}"
+
+- name: Check etcd endpoint health
+  ansible.builtin.command: >
+    /opt/tantor/usr/bin/etcdctl
+    --endpoints=https://{{ ansible_default_ipv4.address }}:2379
+    --cacert=/opt/tantor/var/lib/etcd/pg-cluster.pki/ca.pem
+    --cert=/opt/tantor/var/lib/etcd/pg-cluster.pki/{{ inventory_hostname }}.pem
+    --key=/opt/tantor/var/lib/etcd/pg-cluster.pki/{{ inventory_hostname }}-key.pem
+    endpoint health
+  register: etcd_health_check
+  changed_when: false
+  failed_when: false
+
+- name: Copy etcd configuration if health check fails
+  ansible.builtin.template:
+    src: etcd.conf.j2
+    dest: /opt/tantor/etc/etcd/etcd.conf
+    mode: "0644"
+  notify: Restart etcd-tantor.service
+  when: etcd_health_check.rc != 0 or 'is healthy' not in etcd_health_check.stdout
+
+- name: Configure etcd-tantor.service
+  ansible.builtin.template:
+    src: etcd-tantor.service.j2
+    dest: /etc/systemd/system/etcd-tantor.service
+    mode: "0644"
+  notify: Restart etcd-tantor.service

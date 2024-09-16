@@ -1,0 +1,25 @@
+[all:children]
+inv_cluster
+inv_etcd
+inv_pg
+inv_keepalived
+ 
+[inv_cluster]
+node1 ansible_host=10.10.44.101 ansible_user=postgres
+node2 ansible_host=10.10.44.102 ansible_user=postgres
+node3 ansible_host=10.10.44.103 ansible_user=postgres
+ 
+[inv_etcd]
+node1 ansible_host=10.10.44.101 ansible_user=postgres
+node2 ansible_host=10.10.44.102 ansible_user=postgres
+node3 ansible_host=10.10.44.103 ansible_user=postgres
+
+[inv_pg]
+node1 ansible_host=10.10.44.101 ansible_user=postgres
+node2 ansible_host=10.10.44.102 ansible_user=postgres
+node3 ansible_host=10.10.44.103 ansible_user=postgres
+
+[inv_keepalived]
+node1 ansible_host=10.10.44.101 ansible_user=postgres
+node2 ansible_host=10.10.44.102 ansible_user=postgres
+node3 ansible_host=10.10.44.103 ansible_user=postgres

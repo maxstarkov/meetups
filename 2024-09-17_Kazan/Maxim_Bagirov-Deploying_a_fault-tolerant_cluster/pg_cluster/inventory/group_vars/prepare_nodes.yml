@@ -1,0 +1,7 @@
+---
+# vars file for pg_cluster
+
+add_nexus_repo: "true"
+
+nexus_key_url: "https://public.tantorlabs.ru/tantorlabs.ru.asc"
+nexus_apt_ubuntu_22_04: "deb [arch=amd64] https://pg_bootcamp:ZExfcnybrAjhevf2024@nexus.tantorlabs.ru/repository/bootcamp_kazan_2024_ubuntu-22.04 jammy main"

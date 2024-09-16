@@ -1,0 +1,32 @@
+- name: Install haproxy-tantor-all (RHEL-like systems)
+  when: ansible_os_family in ["RED", "Centos", "Rocky", "RedHat"]
+  ansible.builtin.yum:
+    name: >-
+      {{
+        'haproxy-tantor-all-' + haproxy_package_version
+        if haproxy_package_version | length > 0
+        else
+        'haproxy-tantor-all'
+      }}
+    state: present
+    allow_downgrade: true
+
+- name: Install haproxy-tantor-all (Debian-like systems)
+  when: ansible_os_family in ["Astra Linux", "Debian"]
+  ansible.builtin.apt:
+    name: >-
+      {{
+        'haproxy-tantor-all=' + haproxy_package_version
+        if haproxy_package_version | length > 0
+        else
+        'haproxy-tantor-all'
+      }}
+    state: present
+    allow_downgrade: true
+
+- name: Create config file for haproxy
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: /opt/tantor/etc/haproxy/haproxy.cfg
+    mode: "0644"
+  notify: Restart HAproxy

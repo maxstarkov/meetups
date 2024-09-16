@@ -1,0 +1,38 @@
+# [member]
+ETCD_NAME="{{ansible_hostname}}"
+ETCD_DATA_DIR="{{etcd_cluster_data_dir}}"
+ETCD_LISTEN_CLIENT_URLS="{{etcd_scheme}}{{etcd_listen_cluster}}:{{etcd_port_client}},{{etcd_scheme}}localhost:{{etcd_port_client}}"
+#
+# [cluster]
+{% if inventory_hostname in groups[etcd_master_group_name] %}
+ETCD_LISTEN_PEER_URLS="{{etcd_scheme}}{{etcd_listen_cluster}}:{{etcd_port_peer}}"
+ETCD_ADVERTISE_CLIENT_URLS="{{etcd_scheme}}{{etcd_address_public}}:{{etcd_port_client}}"
+ETCD_INITIAL_ADVERTISE_PEER_URLS="{{etcd_scheme}}{{etcd_address_cluster}}:{{etcd_port_peer}}"
+{% endif %}
+ETCD_INITIAL_CLUSTER="{{etcd_cluster}}"
+ETCD_INITIAL_CLUSTER_STATE="{{ 'existing' if etcd_health_status else 'new' }}"
+{% if not etcd_health_status %}
+ETCD_INITIAL_CLUSTER_TOKEN="{{ etcd_initial_cluster_token }}"
+{% endif %}
+#
+#[proxy]
+{% if inventory_hostname not in groups[etcd_master_group_name] %}
+ETCD_PROXY="on"
+{% endif %}
+#
+#[security]
+{% if etcd_secure %}
+ETCD_CERT_FILE="{{etcd_pki_cert_dest}}"
+ETCD_KEY_FILE="{{etcd_pki_key_dest}}"
+ETCD_CLIENT_CERT_AUTH="true"
+ETCD_TRUSTED_CA_FILE="{{etcd_pki_ca_cert_dest}}"
+ETCD_PEER_CERT_FILE="{{etcd_pki_cert_dest}}"
+ETCD_PEER_KEY_FILE="{{etcd_pki_key_dest}}"
+ETCD_PEER_CLIENT_CERT_AUTH="true"
+ETCD_PEER_TRUSTED_CA_FILE="{{etcd_pki_ca_cert_dest}}"
+{% endif %}
+#
+#[logging]
+#ETCD_DEBUG="true"
+# examples for -log-package-levels etcdserver=WARNING,security=DEBUG
+#ETCD_LOG_PACKAGE_LEVELS="etcdserver=DEBUG"

@@ -1,0 +1,59 @@
+---
+
+- name: "Configure hostname"
+  ansible.builtin.hostname:
+    name: "{{ inventory_hostname }}"
+  become: true
+
+- name: Block for installation of basic utils
+  module_defaults:
+    ansible.builtin.apt:
+      update_cache: true
+    ansible.builtin.yum:
+      update_cache: true
+    ansible.builtin.dnf:
+      update_cache: true
+    ansible.builtin.apt_rpm:
+      update_cache: true
+  block:
+    - name: Install basic utils
+      ansible.builtin.package:
+        name:
+          - jq
+          - chrony
+        state: present
+      # notify: Restart chronyd
+
+- name: Include task for Debian-like systems
+  ansible.builtin.include_tasks: debian.yml
+  when: ansible_os_family in ["Astra Linux", "Debian", "Ubuntu"]
+
+- name: Include task for RHEL-like systems
+  ansible.builtin.include_tasks: rhel.yml
+  when: ansible_os_family in ["RED", "Centos", "Rocky", "RedHat"]
+
+- name: Get content of /etc/security/limits.conf file
+  ansible.builtin.lineinfile:
+    path: /etc/security/limits.conf
+    regexp: '(postgres\shard)|(postgres\ssoft)'
+    state: absent
+  check_mode: true
+  register: sec_limit
+  changed_when: false
+
+- name: Add secure limits for postgres if not exists
+  ansible.builtin.lineinfile:
+    path: /etc/security/limits.conf
+    line: "{{ item }}"
+    state: present
+  when: not sec_limit.found
+  with_items:
+    - "postgres soft    nofile   65536"
+    - "postgres hard    nofile   100000"
+
+- name: Add another bin dir to system-wide $PATH.
+  when: ansible_env.PATH is not search("/opt/tantor/usr/bin:/opt/tantor/usr/sbin")
+  ansible.builtin.copy:
+    dest: /etc/profile.d/tantor.sh
+    content: 'PATH=$PATH:/opt/tantor/usr/bin:/opt/tantor/usr/sbin'
+    mode: "0644"
