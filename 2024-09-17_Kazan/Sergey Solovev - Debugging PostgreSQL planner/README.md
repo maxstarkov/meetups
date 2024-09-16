@@ -45,11 +45,11 @@
 ```shell
 # Debian based
 sudo apt update
-sudo apt install build-essential gdb bison flex libreadline-dev
+sudo apt install build-essential gdb bison flex libreadline-dev git
 
 # RPM based
 sudo yum update
-sudo yum install gcc gdb bison flex make readline-devel perl-CPAN
+sudo yum install gcc gdb bison flex make readline-devel perl-CPAN git
 ```
 
 Ссылка на архив с 16.4 версией -
@@ -58,6 +58,12 @@ sudo yum install gcc gdb bison flex make readline-devel perl-CPAN
 Настройку окружения можно произвести следующим образом (запуск **не** от root'а):
 
 ```shell
+# Клонируем репозиторий
+git clone https://github.com/TantorLabs/meetups
+
+# Заходим в директорию с файлами доклада
+cd "meetups/2024-09-17_Kazan/Sergey Solovev - Debugging PostgreSQL planner"
+
 # Запускаем скрипт инициализации репозитория: скачивание файлов,
 # применение патчей, установка расширений VS Code и т.д.
 ./init.sh
