@@ -1,0 +1,132 @@
+From 7f681a3518a7a7d2b82a827849f8e0a9ba7a9be7 Mon Sep 17 00:00:00 2001
+From: Maxim Starkov <maxim.starkov@tantorlabs.ru>
+Date: Mon, 7 Apr 2025 13:20:21 +0500
+Subject: [PATCH v1] Added support for functional dependency ext stats to
+ evaluate the selectivity of parameterized path predicates.
+
+---
+ src/backend/optimizer/path/clausesel.c | 11 +++++++
+ src/backend/statistics/dependencies.c  | 40 ++++++++++++++++++++++++--
+ 2 files changed, 48 insertions(+), 3 deletions(-)
+
+diff --git a/src/backend/optimizer/path/clausesel.c b/src/backend/optimizer/path/clausesel.c
+index 0ab021c1e89..2a195f6ddc0 100644
+--- a/src/backend/optimizer/path/clausesel.c
++++ b/src/backend/optimizer/path/clausesel.c
+@@ -154,6 +154,17 @@ clauselist_selectivity_ext(PlannerInfo *root,
+ 											jointype, sjinfo, rel,
+ 											&estimatedclauses, false);
+ 	}
++	else if (use_extended_stats && varRelid != 0)
++	{
++		rel = find_base_rel(root, varRelid);
++
++		if (rel->statlist != NIL)
++		{
++			s1 = dependencies_clauselist_selectivity(root, clauses, varRelid,
++													jointype, sjinfo, rel,
++													&estimatedclauses);
++		}
++	}
+ 
+ 	/*
+ 	 * Apply normal selectivity estimates for remaining clauses. We'll be
+diff --git a/src/backend/statistics/dependencies.c b/src/backend/statistics/dependencies.c
+index 8d01a93b309..64d80eb3b3f 100644
+--- a/src/backend/statistics/dependencies.c
++++ b/src/backend/statistics/dependencies.c
+@@ -751,8 +751,9 @@ dependency_is_compatible_clause(Node *clause, Index relid, AttrNumber *attnum)
+ 		if (rinfo->pseudoconstant)
+ 			return false;
+ 
+-		/* Clauses referencing multiple, or no, varnos are incompatible */
+-		if (bms_membership(rinfo->clause_relids) != BMS_SINGLETON)
++		/* Clauses referencing more than two, or no, varnos are incompatible */
++		if (bms_num_members(rinfo->clause_relids) > 2
++			|| bms_num_members(rinfo->clause_relids) == 0)
+ 			return false;
+ 
+ 		clause = (Node *) rinfo->clause;
+@@ -760,6 +761,9 @@ dependency_is_compatible_clause(Node *clause, Index relid, AttrNumber *attnum)
+ 
+ 	if (is_opclause(clause))
+ 	{
++		Bitmapset *l_arg_relids = NULL;
++		Bitmapset *r_arg_relids = NULL;
++
+ 		/* If it's an opclause, check for Var = Const or Const = Var. */
+ 		OpExpr	   *expr = (OpExpr *) clause;
+ 
+@@ -767,11 +771,24 @@ dependency_is_compatible_clause(Node *clause, Index relid, AttrNumber *attnum)
+ 		if (list_length(expr->args) != 2)
+ 			return false;
+ 
++		l_arg_relids = pull_varnos(NULL, linitial(expr->args));
++		r_arg_relids = pull_varnos(NULL, lsecond(expr->args));
++
+ 		/* Make sure non-selected argument is a pseudoconstant. */
+ 		if (is_pseudo_constant_clause(lsecond(expr->args)))
+ 			clause_expr = linitial(expr->args);
+ 		else if (is_pseudo_constant_clause(linitial(expr->args)))
+ 			clause_expr = lsecond(expr->args);
++		else if (bms_membership(l_arg_relids) == BMS_SINGLETON
++				&& bms_singleton_member(l_arg_relids) == relid
++				&& bms_membership(r_arg_relids) == BMS_SINGLETON
++				&& bms_singleton_member(r_arg_relids) != relid)
++			clause_expr = linitial(expr->args);
++		else if (bms_membership(r_arg_relids) == BMS_SINGLETON
++				&& bms_singleton_member(r_arg_relids) == relid
++				&& bms_membership(l_arg_relids) == BMS_SINGLETON
++				&& bms_singleton_member(l_arg_relids) != relid)
++			clause_expr = lsecond(expr->args);
+ 		else
+ 			return false;
+ 
+@@ -1180,7 +1197,8 @@ dependency_is_compatible_expression(Node *clause, Index relid, List *statlist, N
+ 			return false;
+ 
+ 		/* Clauses referencing multiple, or no, varnos are incompatible */
+-		if (bms_membership(rinfo->clause_relids) != BMS_SINGLETON)
++		if (bms_num_members(rinfo->clause_relids) > 2
++			|| bms_num_members(rinfo->clause_relids) == 0)
+ 			return false;
+ 
+ 		clause = (Node *) rinfo->clause;
+@@ -1188,6 +1206,9 @@ dependency_is_compatible_expression(Node *clause, Index relid, List *statlist, N
+ 
+ 	if (is_opclause(clause))
+ 	{
++		Bitmapset *l_arg_relids = NULL;
++		Bitmapset *r_arg_relids = NULL;
++
+ 		/* If it's an opclause, check for Var = Const or Const = Var. */
+ 		OpExpr	   *expr = (OpExpr *) clause;
+ 
+@@ -1195,11 +1216,24 @@ dependency_is_compatible_expression(Node *clause, Index relid, List *statlist, N
+ 		if (list_length(expr->args) != 2)
+ 			return false;
+ 
++		l_arg_relids = pull_varnos(NULL, linitial(expr->args));
++		r_arg_relids = pull_varnos(NULL, lsecond(expr->args));
++
+ 		/* Make sure non-selected argument is a pseudoconstant. */
+ 		if (is_pseudo_constant_clause(lsecond(expr->args)))
+ 			clause_expr = linitial(expr->args);
+ 		else if (is_pseudo_constant_clause(linitial(expr->args)))
+ 			clause_expr = lsecond(expr->args);
++		else if (bms_membership(l_arg_relids) == BMS_SINGLETON
++				&& bms_singleton_member(l_arg_relids) == relid
++				&& bms_membership(r_arg_relids) == BMS_SINGLETON
++				&& bms_singleton_member(r_arg_relids) != relid)
++			clause_expr = linitial(expr->args);
++		else if (bms_membership(r_arg_relids) == BMS_SINGLETON
++				&& bms_singleton_member(r_arg_relids) == relid
++				&& bms_membership(l_arg_relids) == BMS_SINGLETON
++				&& bms_singleton_member(l_arg_relids) != relid)
++			clause_expr = lsecond(expr->args);
+ 		else
+ 			return false;
+ 
+-- 
+2.34.1
+
