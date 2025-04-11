@@ -1,0 +1,370 @@
+diff --git a/src/include/catalog/pg_attribute.h b/src/include/catalog/pg_attribute.h
+index f8b4861b94..9a0518c95e 100644
+--- a/src/include/catalog/pg_attribute.h
++++ b/src/include/catalog/pg_attribute.h
+@@ -168,7 +168,10 @@ CATALOG(pg_attribute,1249,AttributeRelationId) BKI_BOOTSTRAP BKI_ROWTYPE_OID(75,
+ 	 * int16 is sufficient because the max value is currently 10000.
+ 	 */
+ 	int16		attstattarget BKI_DEFAULT(-1);
+-
++	
++	/* statistics sample multiplier */
++	int16		attstatssamplemultiplier BKI_DEFAULT(-1);
++	
+ 	/* attribute's collation, if any */
+ 	Oid			attcollation BKI_LOOKUP_OPT(pg_collation);
+ 
+diff --git a/src/include/parser/kwlist.h b/src/include/parser/kwlist.h
+index f5b2e61ca5..fa27bafadf 100644
+--- a/src/include/parser/kwlist.h
++++ b/src/include/parser/kwlist.h
+@@ -407,6 +407,7 @@ PG_KEYWORD("standalone", STANDALONE_P, UNRESERVED_KEYWORD, BARE_LABEL)
+ PG_KEYWORD("start", START, UNRESERVED_KEYWORD, BARE_LABEL)
+ PG_KEYWORD("statement", STATEMENT, UNRESERVED_KEYWORD, BARE_LABEL)
+ PG_KEYWORD("statistics", STATISTICS, UNRESERVED_KEYWORD, BARE_LABEL)
++PG_KEYWORD("statmultiplier", STATMULTIPLIER, UNRESERVED_KEYWORD, BARE_LABEL)
+ PG_KEYWORD("stdin", STDIN, UNRESERVED_KEYWORD, BARE_LABEL)
+ PG_KEYWORD("stdout", STDOUT, UNRESERVED_KEYWORD, BARE_LABEL)
+ PG_KEYWORD("storage", STORAGE, UNRESERVED_KEYWORD, BARE_LABEL)
+diff --git a/src/backend/parser/gram.y b/src/backend/parser/gram.y
+index 9e1d57baac..921f2d6bd1 100644
+--- a/src/backend/parser/gram.y
++++ b/src/backend/parser/gram.y
+@@ -758,7 +759,7 @@ static Node *makeRecursiveViewSelect(char *relname, List *aliases, Node *query);
+ 	SEQUENCE SEQUENCES
+ 	SERIALIZABLE SERVER SESSION SESSION_USER SET SETS SETOF SHARE SHOW
+ 	SIMILAR SIMPLE SKIP SMALLINT SNAPSHOT SOME SQL_P STABLE STANDALONE_P
+-	START STATEMENT STATISTICS STDIN STDOUT STORAGE STORED STRICT_P STRIP_P
++	START STATEMENT STATISTICS STATMULTIPLIER STDIN STDOUT STORAGE STORED STRICT_P STRIP_P
+ 	SUBSCRIPTION SUBSTRING SUPPORT SYMMETRIC SYSID SYSTEM_P SYSTEM_USER
+ 
+ 	TABLE TABLES TABLESAMPLE TABLESPACE TEMP TEMPLATE TEMPORARY TEXT_P THEN
+@@ -2448,6 +2449,16 @@ alter_table_cmd:
+ 					n->def = (Node *) makeInteger($6);
+ 					$$ = (Node *) n;
+ 				}
++			/* ALTER TABLE <name> ALTER [COLUMN] <colname> SET STATMULTIPLIER <SignedIconst> */
++			| ALTER opt_column ColId SET STATMULTIPLIER SignedIconst
++				{
++					AlterTableCmd *n = makeNode(AlterTableCmd);
++
++					n->subtype = AT_SetStatisticsSampleMultiplierColumn;
++					n->name = $3;
++					n->def = (Node *) makeInteger($6);
++					$$ = (Node *) n;
++				}
+ 			/* ALTER TABLE <name> ALTER [COLUMN] <colname> SET ( column_parameter = value [, ... ] ) */
+ 			| ALTER opt_column ColId SET reloptions
+ 				{
+@@ -17204,6 +17260,7 @@ unreserved_keyword:
+ 			| START
+ 			| STATEMENT
+ 			| STATISTICS
++			| STATMULTIPLIER
+ 			| STDIN
+ 			| STDOUT
+ 			| STORAGE
+@@ -17812,6 +17869,7 @@ bare_label_keyword:
+ 			| START
+ 			| STATEMENT
+ 			| STATISTICS
++			| STATMULTIPLIER
+ 			| STDIN
+ 			| STDOUT
+ 			| STORAGE
+diff --git a/src/include/nodes/parsenodes.h b/src/include/nodes/parsenodes.h
+index 9dca3b6528..fcdb93ff60 100644
+--- a/src/include/nodes/parsenodes.h
++++ b/src/include/nodes/parsenodes.h
+@@ -2179,6 +2179,7 @@ typedef enum AlterTableType
+ 	AT_DropExpression,			/* alter column drop expression */
+ 	AT_CheckNotNull,			/* check column is already marked not null */
+ 	AT_SetStatistics,			/* alter column set statistics */
++	AT_SetStatisticsSampleMultiplierColumn,	/* alter column set statistics sample multiplier*/
+ 	AT_SetOptions,				/* alter column set ( options ) */
+ 	AT_ResetOptions,			/* alter column reset ( options ) */
+ 	AT_SetStorage,				/* alter column set storage */
+diff --git a/src/backend/commands/tablecmds.c b/src/backend/commands/tablecmds.c
+index 040eb50078..0700040586 100644
+--- a/src/backend/commands/tablecmds.c
++++ b/src/backend/commands/tablecmds.c
+@@ -466,6 +466,8 @@ static void ATPrepDropExpression(Relation rel, AlterTableCmd *cmd, bool recurse,
+ static ObjectAddress ATExecDropExpression(Relation rel, const char *colName, bool missing_ok, LOCKMODE lockmode);
+ static ObjectAddress ATExecSetStatistics(Relation rel, const char *colName, int16 colNum,
+ 										 Node *newValue, LOCKMODE lockmode);
++static ObjectAddress ATExecSetStatisticsSampleMultiplierColumn(Relation rel, const char *colName, int16 colNum,
++										 Node *newValue, LOCKMODE lockmode);
+ static ObjectAddress ATExecSetOptions(Relation rel, const char *colName,
+ 									  Node *options, bool isReset, LOCKMODE lockmode);
+ static ObjectAddress ATExecSetStorage(Relation rel, const char *colName,
+@@ -4511,6 +4513,7 @@ AlterTableGetLockLevel(List *cmds)
+ 				 * updates.
+ 				 */
+ 			case AT_SetStatistics:	/* Uses MVCC in getTableAttrs() */
++			case AT_SetStatisticsSampleMultiplierColumn:
+ 			case AT_ClusterOn:	/* Uses MVCC in getIndexes() */
+ 			case AT_DropCluster:	/* Uses MVCC in getIndexes() */
+ 			case AT_SetOptions: /* Uses MVCC in getTableAttrs() */
+@@ -4739,6 +4742,7 @@ ATPrepCmd(List **wqueue, Relation rel, AlterTableCmd *cmd,
+ 			pass = AT_PASS_DROP;
+ 			break;
+ 		case AT_SetStatistics:	/* ALTER COLUMN SET STATISTICS */
++		case AT_SetStatisticsSampleMultiplierColumn: /* ALTER COLUMN SET STATMULTIPLIER */
+ 			ATSimplePermissions(cmd->subtype, rel, ATT_TABLE | ATT_MATVIEW | ATT_INDEX | ATT_PARTITIONED_INDEX | ATT_FOREIGN_TABLE);
+ 			ATSimpleRecursion(wqueue, rel, cmd, recurse, lockmode, context);
+ 			/* No command-specific prep needed */
+@@ -5122,6 +5126,9 @@ ATExecCmd(List **wqueue, AlteredTableInfo *tab,
+ 		case AT_SetStatistics:	/* ALTER COLUMN SET STATISTICS */
+ 			address = ATExecSetStatistics(rel, cmd->name, cmd->num, cmd->def, lockmode);
+ 			break;
++		case AT_SetStatisticsSampleMultiplierColumn:	/* ALTER COLUMN SET STATISTICS */
++			address = ATExecSetStatisticsSampleMultiplierColumn(rel, cmd->name, cmd->num, cmd->def, lockmode);
++			break;
+ 		case AT_SetOptions:		/* ALTER COLUMN SET ( options ) */
+ 			address = ATExecSetOptions(rel, cmd->name, cmd->def, false, lockmode);
+ 			break;
+@@ -6246,6 +6253,8 @@ alter_table_type_to_string(AlterTableType cmdtype)
+ 			return NULL;		/* not real grammar */
+ 		case AT_SetStatistics:
+ 			return "ALTER COLUMN ... SET STATISTICS";
++		case AT_SetStatisticsSampleMultiplierColumn:
++			return "ALTER COLUMN ... SET STATMULTIPLIER";
+ 		case AT_SetOptions:
+ 			return "ALTER COLUMN ... SET";
+ 		case AT_ResetOptions:
+@@ -8329,6 +8338,113 @@ ATExecSetStatistics(Relation rel, const char *colName, int16 colNum, Node *newVa
+ 	return address;
+ }
+ 
++static ObjectAddress
++ATExecSetStatisticsSampleMultiplierColumn(Relation rel, const char *colName, int16 colNum, Node *newValue, LOCKMODE lockmode)
++{
++	int			newtarget;
++	Relation	attrelation;
++	HeapTuple	tuple;
++	Form_pg_attribute attrtuple;
++	AttrNumber	attnum;
++	ObjectAddress address;
++
++	/*
++	 * We allow referencing columns by numbers only for indexes, since table
++	 * column numbers could contain gaps if columns are later dropped.
++	 */
++	if (rel->rd_rel->relkind != RELKIND_INDEX &&
++		rel->rd_rel->relkind != RELKIND_PARTITIONED_INDEX &&
++		!colName)
++		ereport(ERROR,
++				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
++				 errmsg("cannot refer to non-index column by number")));
++
++	Assert(IsA(newValue, Integer));
++	newtarget = intVal(newValue);
++
++	/*
++	 * Limit target to a sane range
++	 */
++	if (newtarget < -1)
++	{
++		ereport(ERROR,
++				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
++				 errmsg("statistics target %d is too low",
++						newtarget)));
++	}
++	else if (newtarget > 10000)
++	{
++		newtarget = 10000;
++		ereport(WARNING,
++				(errcode(ERRCODE_INVALID_PARAMETER_VALUE),
++				 errmsg("lowering statistics target to %d",
++						newtarget)));
++	}
++
++	attrelation = table_open(AttributeRelationId, RowExclusiveLock);
++
++	if (colName)
++	{
++		tuple = SearchSysCacheCopyAttName(RelationGetRelid(rel), colName);
++
++		if (!HeapTupleIsValid(tuple))
++			ereport(ERROR,
++					(errcode(ERRCODE_UNDEFINED_COLUMN),
++					 errmsg("column \"%s\" of relation \"%s\" does not exist",
++							colName, RelationGetRelationName(rel))));
++	}
++	else
++	{
++		tuple = SearchSysCacheCopyAttNum(RelationGetRelid(rel), colNum);
++
++		if (!HeapTupleIsValid(tuple))
++			ereport(ERROR,
++					(errcode(ERRCODE_UNDEFINED_COLUMN),
++					 errmsg("column number %d of relation \"%s\" does not exist",
++							colNum, RelationGetRelationName(rel))));
++	}
++
++	attrtuple = (Form_pg_attribute) GETSTRUCT(tuple);
++
++	attnum = attrtuple->attnum;
++	if (attnum <= 0)
++		ereport(ERROR,
++				(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
++				 errmsg("cannot alter system column \"%s\"",
++						colName)));
++
++	if (rel->rd_rel->relkind == RELKIND_INDEX ||
++		rel->rd_rel->relkind == RELKIND_PARTITIONED_INDEX)
++	{
++		if (attnum > rel->rd_index->indnkeyatts)
++			ereport(ERROR,
++					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
++					 errmsg("cannot alter statistics on included column \"%s\" of index \"%s\"",
++							NameStr(attrtuple->attname), RelationGetRelationName(rel))));
++		else if (rel->rd_index->indkey.values[attnum - 1] != 0)
++			ereport(ERROR,
++					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
++					 errmsg("cannot alter statistics on non-expression column \"%s\" of index \"%s\"",
++							NameStr(attrtuple->attname), RelationGetRelationName(rel)),
++					 errhint("Alter statistics on table column instead.")));
++	}
++
++	attrtuple->attstatssamplemultiplier = newtarget;
++
++	CatalogTupleUpdate(attrelation, &tuple->t_self, tuple);
++
++	InvokeObjectPostAlterHook(RelationRelationId,
++							  RelationGetRelid(rel),
++							  attrtuple->attnum);
++	ObjectAddressSubSet(address, RelationRelationId,
++						RelationGetRelid(rel), attnum);
++	heap_freetuple(tuple);
++
++	table_close(attrelation, RowExclusiveLock);
++
++	return address;
++}
++
+ /*
+  * Return value is the address of the modified column
+  */
+diff --git a/src/backend/bootstrap/bootstrap.c b/src/backend/bootstrap/bootstrap.c
+index 49e956b2c5..bc1fca2b0a 100644
+--- a/src/backend/bootstrap/bootstrap.c
++++ b/src/backend/bootstrap/bootstrap.c
+@@ -562,6 +562,7 @@ DefineAttr(char *name, char *type, int attnum, int nullness)
+ 		attrtypes[attnum]->attcollation = C_COLLATION_OID;
+ 
+ 	attrtypes[attnum]->attstattarget = -1;
++	attrtypes[attnum]->attstatssamplemultiplier = -1;
+ 	attrtypes[attnum]->attcacheoff = -1;
+ 	attrtypes[attnum]->atttypmod = -1;
+ 	attrtypes[attnum]->attislocal = true;
+diff --git a/src/backend/access/common/tupdesc.c b/src/backend/access/common/tupdesc.c
+index 7c5c390503..1a426c1c68 100644
+--- a/src/backend/access/common/tupdesc.c
++++ b/src/backend/access/common/tupdesc.c
+@@ -618,6 +618,7 @@ TupleDescInitEntry(TupleDesc desc,
+ 		namestrcpy(&(att->attname), attributeName);
+ 
+ 	att->attstattarget = -1;
++	att->attstatssamplemultiplier = -1;
+ 	att->attcacheoff = -1;
+ 	att->atttypmod = typmod;
+ 
+@@ -681,6 +682,7 @@ TupleDescInitBuiltinEntry(TupleDesc desc,
+ 	namestrcpy(&(att->attname), attributeName);
+ 
+ 	att->attstattarget = -1;
++	att->attstatssamplemultiplier = -1;
+ 	att->attcacheoff = -1;
+ 	att->atttypmod = typmod;
+ 
+diff --git a/src/backend/catalog/index.c b/src/backend/catalog/index.c
+index bc08ab66bd..ad5be0ae0a 100644
+--- a/src/backend/catalog/index.c
++++ b/src/backend/catalog/index.c
+@@ -327,6 +327,7 @@ ConstructTupleDescriptor(Relation heapRelation,
+ 		MemSet(to, 0, ATTRIBUTE_FIXED_PART_SIZE);
+ 		to->attnum = i + 1;
+ 		to->attstattarget = -1;
++		to->attstatssamplemultiplier = -1;
+ 		to->attcacheoff = -1;
+ 		to->attislocal = true;
+ 		to->attcollation = (i < numkeyatts) ?
+diff --git a/src/backend/commands/analyze.c b/src/backend/commands/analyze.c
+index bda364552c..18404895e0 100644
+--- a/src/backend/commands/analyze.c
++++ b/src/backend/commands/analyze.c
+@@ -1892,7 +1892,10 @@ std_typanalyze(VacAttrStats *stats)
+ 	/* NB: it is okay to scribble on stats->attr since it's a copy */
+ 	if (attr->attstattarget < 0)
+ 		attr->attstattarget = default_statistics_target;
+-
++	/* If the attstatssamplemultiplier column is negative, use the default value */
++	/* NB: it is okay to scribble on stats->attr since it's a copy */
++	if (attr->attstatssamplemultiplier < 1 || attr->attstatssamplemultiplier > 10000)
++		attr->attstatssamplemultiplier = 1;
+ 	/* Look for default "<" and "=" operators for column's type */
+ 	get_sort_group_operators(stats->attrtypid,
+ 							 false, false, false,
+@@ -1932,21 +1935,21 @@ std_typanalyze(VacAttrStats *stats)
+ 		 * know it at this point.
+ 		 *--------------------
+ 		 */
+-		stats->minrows = 300 * attr->attstattarget;
++		stats->minrows = 300 * attr->attstattarget * attr->attstatssamplemultiplier;
+ 	}
+ 	else if (OidIsValid(eqopr))
+ 	{
+ 		/* We can still recognize distinct values */
+ 		stats->compute_stats = compute_distinct_stats;
+ 		/* Might as well use the same minrows as above */
+-		stats->minrows = 300 * attr->attstattarget;
++		stats->minrows = 300 * attr->attstattarget * attr->attstatssamplemultiplier;
+ 	}
+ 	else
+ 	{
+ 		/* Can't do much but the trivial stuff */
+ 		stats->compute_stats = compute_trivial_stats;
+ 		/* Might as well use the same minrows as above */
+-		stats->minrows = 300 * attr->attstattarget;
++		stats->minrows = 300 * attr->attstattarget * attr->attstatssamplemultiplier;
+ 	}
+ 
+ 	return true;
+diff --git a/doc/src/sgml/ref/alter_table.sgml b/doc/src/sgml/ref/alter_table.sgml
+index 115da7a733..7de74be4ca 100644
+--- a/doc/src/sgml/ref/alter_table.sgml
++++ b/doc/src/sgml/ref/alter_table.sgml
+@@ -51,6 +51,7 @@ ALTER TABLE [ IF EXISTS ] <replaceable class="parameter">name</replaceable>
+     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> { SET GENERATED { ALWAYS | BY DEFAULT } | SET <replaceable>sequence_option</replaceable> | RESTART [ [ WITH ] <replaceable class="parameter">restart</replaceable> ] } [...]
+     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> DROP IDENTITY [ IF EXISTS ]
+     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> SET STATISTICS <replaceable class="parameter">integer</replaceable>
++    ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> SET STATMULTIPLIER <replaceable class="parameter">integer</replaceable>
+     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> SET ( <replaceable class="parameter">attribute_option</replaceable> = <replaceable class="parameter">value</replaceable> [, ... ] )
+     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> RESET ( <replaceable class="parameter">attribute_option</replaceable> [, ... ] )
+     ALTER [ COLUMN ] <replaceable class="parameter">column_name</replaceable> SET STORAGE { PLAIN | EXTERNAL | EXTENDED | MAIN | DEFAULT }
+@@ -329,6 +330,24 @@ WITH ( MODULUS <replaceable class="parameter">numeric_literal</replaceable>, REM
+     </listitem>
+    </varlistentry>
+ 
++   <varlistentry id="sql-altertable-desc-set-statmultiplier">
++    <term><literal>SET STATMULTIPLIER <replaceable class="parameter">integer</replaceable></literal></term>
++    <listitem>
++     <para>
++     This form
++     sets the per-column statistics sample size multiplier for subsequent
++     <command>ANALYZE</command> operations.
++     The multiplier is applied to the sample size determined by the statistics target.
++     The multiplier can be set to values between 1 and 10000. Alternatively, set it
++     to -1 to revert to using the system default statistics sample multiplier.
++     </para>
++     <para>
++      <literal>SET STATMULTIPLIER</literal> acquires a
++      <literal>SHARE UPDATE EXCLUSIVE</literal> lock.
++     </para>
++     </listitem>
++   </varlistentry>
++
+    <varlistentry id="sql-altertable-desc-set-attribute-option">
+     <term><literal>SET ( <replaceable class="parameter">attribute_option</replaceable> = <replaceable class="parameter">value</replaceable> [, ... ] )</literal></term>
+     <term><literal>RESET ( <replaceable class="parameter">attribute_option</replaceable> [, ... ] )</literal></term>
